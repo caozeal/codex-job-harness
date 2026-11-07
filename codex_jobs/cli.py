@@ -28,6 +28,11 @@ def main(argv=None):
     group.add_argument('--once', action='store_true')
     group.add_argument('--loop', action='store_true')
     p.add_argument('--interval', type=float, default=60)
+    p = subs.add_parser('serve')
+    p.add_argument('--host', default='127.0.0.1')
+    p.add_argument('--port', type=int, default=8770)
+    p.add_argument('--open', action='store_true')
+    p.add_argument('--allow-remote', action='store_true')
     args = parser.parse_args(argv)
     try:
         if args.command == 'submit':
@@ -38,6 +43,10 @@ def main(argv=None):
             result = continue_job(args.job_id, args.task)
         elif args.command == 'list':
             result = store.list_jobs(args.status)
+        elif args.command == 'serve':
+            from . import web
+            web.serve(args.host, args.port, args.open, args.allow_remote)
+            return
         else:
             if args.interval <= 0:
                 raise ValueError('interval must be positive')

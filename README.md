@@ -18,6 +18,12 @@ Run `watch --once` every minute under launchd or cron, or run `watch --loop --in
 
 Repositories must resolve inside the allowed root and contain `.git`. Analyze mode uses read-only sandboxing; edits require explicit opt-in. Resume turns explicitly set the sandbox and disable approval prompts, so they do not implicitly inherit a less restrictive sandbox from Codex configuration. Job directories and files are private to the current user.
 
+## 任务可视化
+
+运行 `python3 -m codex_jobs serve [--host 127.0.0.1] [--port 8770] [--open]`，在浏览器查看任务状态、事件和日志。页面每三秒自动刷新，详情打开期间暂停刷新；数据来自 `CODEX_JOB_DIR`，服务只提供只读 GET/HEAD 接口。
+
+默认仅监听本机。监听其他地址必须显式加 `--allow-remote`；服务没有身份验证，请谨慎暴露。
+
 ## Installed layout
 
     ~/projects/codex-job-harness/       # source of truth (git repo) — edit here
