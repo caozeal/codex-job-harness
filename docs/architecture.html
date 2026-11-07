@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Hermes ↔ Codex 任务编排架构</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #020617; color: #e2e8f0;
+    font-family: "JetBrains Mono", "PingFang SC", "Hiragino Sans GB", monospace;
+    padding: 28px 32px 40px;
+  }
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 12px #34d399; animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity: .45; transform: scale(.82);} }
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .3px; }
+  .sub { font-size: 10.5px; color: #64748b; margin: 4px 0 18px 21px; }
+  .canvas { border: 1px solid #1e293b; border-radius: 14px; background: #020617; overflow: hidden; }
+  svg { display: block; width: 100%; height: auto; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; }
+  .card { border: 1px solid #1e293b; border-radius: 10px; background: #0b1220; padding: 12px 14px; }
+  .card h3 { font-size: 11px; margin: 0 0 8px; display: flex; align-items: center; gap: 7px; font-weight: 600; }
+  .cd { width: 7px; height: 7px; border-radius: 50%; }
+  .cyan { background: #22d3ee; } .violet { background: #a78bfa; } .rose { background: #fb7185; }
+  .card li { font-size: 9.5px; color: #94a3b8; line-height: 1.75; list-style: none; margin-left: -14px; }
+  .footer { margin-top: 14px; font-size: 9px; color: #475569; display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<div class="header"><div class="dot"></div><h1>Hermes ↔ Codex 任务编排架构</h1></div>
+<div class="sub">macOS · Hermes gateway（默认 runtime）+ codex-job-harness · codex-cli 0.167.0 · 2026-11-07</div>
+
+<div class="canvas">
+<svg viewBox="0 0 1680 1080" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+    </pattern>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="ar-cyan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#22d3ee"/>
+    </marker>
+    <marker id="ar-orange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#fb923c"/>
+    </marker>
+    <marker id="ar-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#fb7185"/>
+    </marker>
+  </defs>
+
+  <rect width="1680" height="1080" fill="url(#grid)"/>
+
+  <!-- ============ arrows first (behind boxes) ============ -->
+  <!-- 入口 -> Hermes -->
+  <path d="M 300 170 L 300 212" fill="none" stroke="#22d3ee" stroke-width="1.4" marker-end="url(#ar-cyan)"/>
+  <!-- 入口 -> Cron -->
+  <path d="M 900 170 L 900 212" fill="none" stroke="#fb923c" stroke-width="1.4" marker-end="url(#ar-orange)"/>
+  <!-- Hermes -> Plugin -->
+  <path d="M 300 307 L 300 352" fill="none" stroke="#34d399" stroke-width="1.4" marker-end="url(#ar)"/>
+  <!-- Plugin -> Store -->
+  <path d="M 300 460 L 300 505" fill="none" stroke="#34d399" stroke-width="1.4" marker-end="url(#ar)"/>
+  <!-- Plugin -> Worker (spawn, detached) -->
+  <path d="M 160 460 L 160 668" fill="none" stroke="#fbbf24" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#ar)"/>
+  <text x="172" y="648" fill="#fbbf24" font-size="8" transform="rotate(-90 172 648)">spawn · 独立进程组</text>
+  <!-- Worker <-> Store -->
+  <path d="M 470 666 L 470 628" fill="none" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#ar)"/>
+  <path d="M 430 628 L 430 666" fill="none" stroke="#a78bfa" stroke-width="1.3" marker-end="url(#ar)"/>
+  <text x="480" y="650" fill="#a78bfa" font-size="8">status.json</text>
+  <!-- Worker -> Codex -->
+  <path d="M 300 770 L 300 812" fill="none" stroke="#fbbf24" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="312" y="796" fill="#94a3b8" font-size="8.5">argv · JSONL stdout</text>
+  <!-- Codex -> OpenAI -->
+  <path d="M 300 925 L 300 967" fill="none" stroke="#94a3b8" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="312" y="951" fill="#94a3b8" font-size="8.5">HTTPS · chatgpt OAuth</text>
+  <!-- Cron -> watcher -->
+  <path d="M 900 307 L 900 352" fill="none" stroke="#fb923c" stroke-width="1.4" marker-end="url(#ar-orange)"/>
+  <!-- Store -> watcher -->
+  <path d="M 500 545 L 560 545 L 560 450" fill="none" stroke="#fb923c" stroke-width="1.2" marker-end="url(#ar-orange)"/>
+  <text x="566" y="540" fill="#fb923c" font-size="8">sweep</text>
+  <text x="566" y="552" fill="#fb923c" font-size="8">读状态</text>
+  <!-- watcher -> send -->
+  <path d="M 900 460 L 900 502" fill="none" stroke="#fb923c" stroke-width="1.4" marker-end="url(#ar-orange)"/>
+  <!-- send -> 微信 (dashed loop) -->
+  <path d="M 1090 560 L 1128 560 L 1128 125 L 1084 125" fill="none" stroke="#22d3ee" stroke-width="1.3" stroke-dasharray="6,5" marker-end="url(#ar-cyan)"/>
+  <text x="1146" y="520" fill="#22d3ee" font-size="8" transform="rotate(-90 1146 520)">hermes send → 微信</text>
+  <!-- watcher -> Worker retry -->
+  <path d="M 710 445 L 640 445 L 640 700 L 506 700" fill="none" stroke="#fb7185" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#ar-rose)"/>
+  <text x="560" y="716" fill="#fb7185" font-size="8">失败重试 spawn</text>
+
+  <!-- ============ 入口层 ============ -->
+  <rect x="120" y="80" width="960" height="90" rx="8" fill="#0f172a" stroke="#22d3ee" stroke-width="1.5" fill-opacity="1"/>
+  <rect x="120" y="80" width="960" height="90" rx="8" fill="rgba(8,51,68,0.4)" stroke="none"/>
+  <text x="136" y="100" fill="#22d3ee" font-size="10" font-weight="600">入口层 · Triggers</text>
+  <rect x="140" y="110" width="270" height="42" rx="5" fill="#0f172a" stroke="#164e63" stroke-width="1"/>
+  <text x="156" y="128" fill="#e2e8f0" font-size="10">微信 DM（主入口）</text>
+  <text x="156" y="143" fill="#64748b" font-size="8">「用 codex_submit 分析 …」</text>
+  <rect x="425" y="110" width="270" height="42" rx="5" fill="#0f172a" stroke="#164e63" stroke-width="1"/>
+  <text x="441" y="128" fill="#e2e8f0" font-size="10">CLI / 一次性任务</text>
+  <text x="441" y="143" fill="#64748b" font-size="8">hermes -z "…"</text>
+  <rect x="710" y="110" width="350" height="42" rx="5" fill="#0f172a" stroke="#164e63" stroke-width="1"/>
+  <text x="726" y="128" fill="#e2e8f0" font-size="10">Cron / Webhook</text>
+  <text x="726" y="143" fill="#64748b" font-size="8">定时巡检 · 事件驱动</text>
+
+  <!-- ============ Hermes ============ -->
+  <rect x="120" y="215" width="380" height="92" rx="7" fill="#0f172a" stroke="#34d399" stroke-width="1.5"/>
+  <rect x="120" y="215" width="380" height="92" rx="7" fill="rgba(6,78,59,0.4)" stroke="none"/>
+  <text x="136" y="236" fill="#34d399" font-size="10.5" font-weight="600">Hermes Agent · 默认 runtime</text>
+  <text x="136" y="254" fill="#cbd5e1" font-size="9">会话 / 工具调度 / 记忆 / 审批</text>
+  <text x="136" y="270" fill="#64748b" font-size="8.5">模型 group/hermes (magpie)</text>
+  <text x="136" y="285" fill="#64748b" font-size="8.5">/codex-runtime 保持 auto（不改主循环）</text>
+  <text x="136" y="300" fill="#475569" font-size="7.5">gateway pid · weixin 渠道在线</text>
+
+  <!-- ============ Cron ============ -->
+  <rect x="710" y="215" width="380" height="92" rx="7" fill="#0f172a" stroke="#fb923c" stroke-width="1.5"/>
+  <rect x="710" y="215" width="380" height="92" rx="7" fill="rgba(251,146,60,0.18)" stroke="none"/>
+  <text x="726" y="236" fill="#fb923c" font-size="10.5" font-weight="600">Hermes Cron · codex-watch</text>
+  <text x="726" y="254" fill="#cbd5e1" font-size="9">no_agent · every 1m · 空输出=不发</text>
+  <text x="726" y="270" fill="#64748b" font-size="8.5">~/.hermes/scripts/codex_watch.py</text>
+  <text x="726" y="285" fill="#64748b" font-size="8.5">每 tick 0 token</text>
+
+  <!-- ============ Plugin ============ -->
+  <rect x="120" y="355" width="380" height="105" rx="7" fill="#0f172a" stroke="#34d399" stroke-width="1.5"/>
+  <rect x="120" y="355" width="380" height="105" rx="7" fill="rgba(6,78,59,0.4)" stroke="none"/>
+  <text x="136" y="376" fill="#34d399" font-size="10.5" font-weight="600">插件 · codex-worker</text>
+  <text x="136" y="394" fill="#cbd5e1" font-size="9">~/.hermes/plugins/codex-worker</text>
+  <text x="136" y="411" fill="#94a3b8" font-size="8.5">codex_submit · codex_status · codex_continue</text>
+  <text x="136" y="427" fill="#64748b" font-size="8.5">plugin.yaml + register(ctx) → 3 tools</text>
+  <text x="136" y="443" fill="#64748b" font-size="8.5">薄适配：转调 codex_jobs.cli，无重复逻辑</text>
+
+  <!-- ============ Store ============ -->
+  <rect x="200" y="505" width="300" height="120" rx="7" fill="#0f172a" stroke="#a78bfa" stroke-width="1.5"/>
+  <rect x="200" y="505" width="300" height="120" rx="7" fill="rgba(76,29,149,0.4)" stroke="none"/>
+  <text x="216" y="526" fill="#a78bfa" font-size="10.5" font-weight="600">任务存储 · job 目录</text>
+  <text x="216" y="544" fill="#cbd5e1" font-size="8.5">~/.hermes/codex-jobs/&lt;job_id&gt;/</text>
+  <text x="216" y="560" fill="#94a3b8" font-size="8">request.json · status.json</text>
+  <text x="216" y="575" fill="#94a3b8" font-size="8">events.jsonl · worker.log · pid</text>
+  <text x="216" y="595" fill="#64748b" font-size="8">0700/0600 · 原子替换 · flock</text>
+  <text x="216" y="610" fill="#64748b" font-size="8">状态 queued→running→succeeded/failed/timeout</text>
+
+  <!-- ============ watcher ============ -->
+  <rect x="710" y="355" width="380" height="105" rx="7" fill="#0f172a" stroke="#fb923c" stroke-width="1.5"/>
+  <rect x="710" y="355" width="380" height="105" rx="7" fill="rgba(251,146,60,0.18)" stroke="none"/>
+  <text x="726" y="376" fill="#fb923c" font-size="10.5" font-weight="600">watcher.sweep · 巡检</text>
+  <text x="726" y="394" fill="#cbd5e1" font-size="9">死进程 → 回收进程组 → 重试（上限 2 次）</text>
+  <text x="726" y="410" fill="#94a3b8" font-size="8.5">超时 1800s → SIGTERM/SIGKILL 进程组</text>
+  <text x="726" y="426" fill="#64748b" font-size="8.5">终态只通知一次（notified 标记）</text>
+  <text x="726" y="442" fill="#64748b" font-size="8.5">同一 thread 续跑，attempt 计数入库</text>
+
+  <!-- ============ send ============ -->
+  <rect x="710" y="505" width="380" height="120" rx="7" fill="#0f172a" stroke="#fb923c" stroke-width="1.5"/>
+  <rect x="710" y="505" width="380" height="120" rx="7" fill="rgba(251,146,60,0.18)" stroke="none"/>
+  <text x="726" y="526" fill="#fb923c" font-size="10.5" font-weight="600">回传 · hermes send</text>
+  <text x="726" y="544" fill="#cbd5e1" font-size="9">cron 直接投递 stdout（-t weixin）</text>
+  <text x="726" y="561" fill="#94a3b8" font-size="8">或 notify.py 走 hermes send（无 LLM）</text>
+  <text x="726" y="578" fill="#64748b" font-size="8">消息含：仓库 · job 前缀 · 尝试次数</text>
+  <text x="726" y="594" fill="#64748b" font-size="8">+ 结果正文 · token 用量</text>
+  <text x="726" y="612" fill="#475569" font-size="7.5">延迟 ≤ 60s</text>
+
+  <!-- ============ Worker ============ -->
+  <rect x="120" y="670" width="380" height="100" rx="7" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5"/>
+  <rect x="120" y="670" width="380" height="100" rx="7" fill="rgba(120,53,15,0.3)" stroke="none"/>
+  <text x="136" y="691" fill="#fbbf24" font-size="10.5" font-weight="600">Worker · 每轮一个独立进程</text>
+  <text x="136" y="709" fill="#cbd5e1" font-size="9">python -m codex_jobs.worker &lt;job_id&gt;</text>
+  <text x="136" y="726" fill="#94a3b8" font-size="8.5">start_new_session → 自带进程组</text>
+  <text x="136" y="742" fill="#64748b" font-size="8.5">解析 JSONL：thread.started / item.completed / turn.completed</text>
+  <text x="136" y="758" fill="#64748b" font-size="8.5">stderr → worker.log · 退出码归为终态</text>
+
+  <!-- ============ Codex CLI ============ -->
+  <rect x="120" y="815" width="380" height="110" rx="7" fill="#0f172a" stroke="#fbbf24" stroke-width="1.5"/>
+  <rect x="120" y="815" width="380" height="110" rx="7" fill="rgba(120,53,15,0.3)" stroke="none"/>
+  <text x="136" y="836" fill="#fbbf24" font-size="10.5" font-weight="600">Codex CLI 0.167.0</text>
+  <text x="136" y="854" fill="#cbd5e1" font-size="8.5">~/.nvm/versions/node/v24.21.0/bin/codex</text>
+  <text x="136" y="870" fill="#94a3b8" font-size="8">首轮 codex exec --json -C &lt;repo&gt; -s read-only</text>
+  <text x="136" y="885" fill="#94a3b8" font-size="8">续轮 codex exec resume &lt;thread&gt; --json</text>
+  <text x="136" y="900" fill="#64748b" font-size="8">-c sandbox_mode=… -c approval_policy=never</text>
+  <text x="136" y="915" fill="#64748b" font-size="8">thread 落 ~/.codex/sessions/**.jsonl</text>
+
+  <!-- ============ OpenAI ============ -->
+  <rect x="120" y="967" width="380" height="80" rx="7" fill="#0f172a" stroke="#94a3b8" stroke-width="1.5"/>
+  <rect x="120" y="967" width="380" height="80" rx="7" fill="rgba(30,41,59,0.5)" stroke="none"/>
+  <text x="136" y="988" fill="#cbd5e1" font-size="10.5" font-weight="600">OpenAI · ChatGPT 订阅</text>
+  <text x="136" y="1006" fill="#94a3b8" font-size="8.5">~/.codex/auth.json → auth_mode = chatgpt</text>
+  <text x="136" y="1022" fill="#64748b" font-size="8.5">消耗订阅额度，不是 API key 计费</text>
+  <text x="136" y="1037" fill="#475569" font-size="7.5">模型 gpt-6.1-terra · effort low（harness 固定）</text>
+
+  <!-- ============ 右侧栏 ============ -->
+  <!-- 文件清单 -->
+  <rect x="1180" y="80" width="440" height="252" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1.2"/>
+  <text x="1196" y="102" fill="#e2e8f0" font-size="10.5" font-weight="600">落盘位置</text>
+  <text x="1196" y="124" fill="#64748b" font-size="8">插件（Hermes 加载）</text>
+  <text x="1196" y="139" fill="#94a3b8" font-size="8.5">~/.hermes/plugins/codex-worker/</text>
+  <text x="1210" y="153" fill="#475569" font-size="8">plugin.yaml · __init__.py</text>
+  <text x="1196" y="173" fill="#64748b" font-size="8">库本体（CODEX_HARNESS_HOME）</text>
+  <text x="1196" y="188" fill="#94a3b8" font-size="8.5">~/.hermes/codex-harness/</text>
+  <text x="1210" y="202" fill="#475569" font-size="8">codex_jobs/{store,worker,watcher,cli}.py · notify.py · tests/</text>
+  <text x="1196" y="222" fill="#64748b" font-size="8">cron 入口</text>
+  <text x="1196" y="237" fill="#94a3b8" font-size="8.5">~/.hermes/scripts/codex_watch.py</text>
+  <text x="1196" y="257" fill="#64748b" font-size="8">状态目录</text>
+  <text x="1196" y="272" fill="#94a3b8" font-size="8.5">~/.hermes/codex-jobs/&lt;job_id&gt;/</text>
+  <text x="1196" y="292" fill="#64748b" font-size="8">env（~/.hermes/.env）</text>
+  <text x="1196" y="307" fill="#94a3b8" font-size="8">CODEX_HARNESS_HOME · CODEX_ALLOWED_ROOT=~/projects</text>
+  <text x="1196" y="321" fill="#94a3b8" font-size="8">CODEX_ALLOW_EDITS=false · CODEX_MAX_ATTEMPTS=2</text>
+
+  <!-- 安全边界 -->
+  <rect x="1180" y="360" width="440" height="252" rx="10" fill="rgba(136,19,55,0.18)" stroke="#fb7185" stroke-width="1.3" stroke-dasharray="5,4"/>
+  <text x="1196" y="382" fill="#fb7185" font-size="10.5" font-weight="600">安全边界</text>
+  <text x="1196" y="403" fill="#fda4af" font-size="8.5">repo 必须在 CODEX_ALLOWED_ROOT 内且含 .git</text>
+  <text x="1196" y="421" fill="#fda4af" font-size="8.5">analyze → -s read-only（实测写入被拒）</text>
+  <text x="1196" y="439" fill="#fda4af" font-size="8.5">edit → 需 CODEX_ALLOW_EDITS=true（当前关）</text>
+  <text x="1196" y="457" fill="#fda4af" font-size="8.5">resume 无 -s/-C，必须 -c sandbox_mode=…</text>
+  <text x="1208" y="472" fill="#9f1239" font-size="8">否则继承 config 的 danger-full-access</text>
+  <text x="1196" y="492" fill="#fda4af" font-size="8.5">job_id 32-hex 校验 · 无 shell=True</text>
+  <text x="1196" y="510" fill="#fda4af" font-size="8.5">子进程 env 白名单（含 PATH/HOME/代理）</text>
+  <text x="1196" y="528" fill="#fda4af" font-size="8.5">目录 0700 / 文件 0600 / 原子替换</text>
+  <text x="1196" y="546" fill="#fda4af" font-size="8.5">超时/崩溃 → killpg 回收整个进程组</text>
+  <text x="1196" y="570" fill="#9f1239" font-size="8">未做：跨机 ws 暴露、edit 自动合并、生产级队列</text>
+
+  <!-- 关键链路 -->
+  <rect x="1180" y="640" width="440" height="300" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1.2"/>
+  <text x="1196" y="662" fill="#e2e8f0" font-size="10.5" font-weight="600">三条关键链路</text>
+  <text x="1196" y="684" fill="#34d399" font-size="8.5">① 提交</text>
+  <text x="1208" y="699" fill="#94a3b8" font-size="8">tool(args) → validate → job 目录 → spawn → 立即返回 job_id</text>
+  <text x="1196" y="721" fill="#fbbf24" font-size="8.5">② 执行</text>
+  <text x="1208" y="736" fill="#94a3b8" font-size="8">worker → codex exec（首轮）/ resume（续轮）→ JSONL → status.json</text>
+  <text x="1196" y="758" fill="#fb7185" font-size="8.5">③ 崩溃恢复（实测）</text>
+  <text x="1208" y="773" fill="#94a3b8" font-size="8">kill -9 worker → 遗留 codex 子进程仍占用 thread 锁</text>
+  <text x="1208" y="788" fill="#94a3b8" font-size="8">→ watcher killpg 回收 → attempt 2 resume 同 thread → 成功</text>
+  <text x="1196" y="812" fill="#fb923c" font-size="8.5">④ 回传</text>
+  <text x="1208" y="827" fill="#94a3b8" font-size="8">cron 每 60s sweep → 终态一次性通知 → hermes send → 微信</text>
+
+  <text x="1196" y="860" fill="#64748b" font-size="8">实测：9 个单测全绿；真 codex 端到端 submit→succeeded；</text>
+  <text x="1196" y="875" fill="#64748b" font-size="8">continue 复用同一 thread；只读反证通过；崩溃重试成功</text>
+  <text x="1196" y="898" fill="#475569" font-size="7.5">单任务成本：input 20k–90k（命中缓存另计）· 延迟 20–60s</text>
+  <text x="1196" y="914" fill="#475569" font-size="7.5">架构取舍：Hermes 决策 / codex 执行 / 文件系统当队列</text>
+
+  <!-- ============ 图例 ============ -->
+  <g transform="translate(120, 1062)">
+    <text x="0" y="0" fill="#475569" font-size="8">图例：</text>
+    <rect x="42" y="-7" width="10" height="8" rx="2" fill="rgba(8,51,68,0.6)" stroke="#22d3ee"/><text x="58" y="0" fill="#64748b" font-size="8">入口</text>
+    <rect x="96" y="-7" width="10" height="8" rx="2" fill="rgba(6,78,59,0.6)" stroke="#34d399"/><text x="112" y="0" fill="#64748b" font-size="8">Hermes / 插件</text>
+    <rect x="192" y="-7" width="10" height="8" rx="2" fill="rgba(76,29,149,0.6)" stroke="#a78bfa"/><text x="208" y="0" fill="#64748b" font-size="8">状态存储</text>
+    <rect x="268" y="-7" width="10" height="8" rx="2" fill="rgba(120,53,15,0.6)" stroke="#fbbf24"/><text x="284" y="0" fill="#64748b" font-size="8">执行层</text>
+    <rect x="336" y="-7" width="10" height="8" rx="2" fill="rgba(251,146,60,0.4)" stroke="#fb923c"/><text x="352" y="0" fill="#64748b" font-size="8">巡检 / 回传</text>
+    <line x1="424" y1="-3" x2="452" y2="-3" stroke="#64748b" stroke-width="1.3"/><text x="458" y="0" fill="#64748b" font-size="8">调用</text>
+    <line x1="488" y1="-3" x2="516" y2="-3" stroke="#fb7185" stroke-width="1.3" stroke-dasharray="5,4"/><text x="522" y="0" fill="#64748b" font-size="8">重试 / 边界</text>
+    <line x1="596" y1="-3" x2="624" y2="-3" stroke="#22d3ee" stroke-width="1.3" stroke-dasharray="6,5"/><text x="630" y="0" fill="#64748b" font-size="8">回传通知</text>
+  </g>
+</svg>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <h3><span class="cd cyan"></span>分层职责</h3>
+    <ul>
+      <li>• Hermes：决定做什么、拆任务、验收、通知</li>
+      <li>• 插件：把决定变成 codex 任务，返回 job_id</li>
+      <li>• 文件目录：当作任务队列与状态机</li>
+      <li>• codex：真正改/读代码、跑命令、产结论</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><span class="cd violet"></span>为什么不用 SDK / 常驻 daemon</h3>
+    <ul>
+      <li>• SDK 只是包装同一个 codex CLI，多一层 Node 依赖</li>
+      <li>• app-server daemon 是 experimental，且线程锁更脆</li>
+      <li>• 现在这层崩溃可重试、状态可审计、无需常驻进程</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3><span class="cd rose"></span>运维要点</h3>
+    <ul>
+      <li>• 插件更新后必须 disable+enable 才会重载</li>
+      <li>• 改 .env 后新会话生效，无需重启网关</li>
+      <li>• 通知上限 60s 一条链路；失败只报一次</li>
+    </ul>
+  </div>
+</div>
+
+<div class="footer"><span>codex-job-harness · 2026-11-07</span><span>codex-job-harness v0.1.0 · codex-cli 0.167.0</span></div>
+</body>
+</html>

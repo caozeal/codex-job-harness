@@ -1,0 +1,7 @@
+name: codex-worker
+version: 1.0.0
+description: Submit and monitor local Codex jobs
+provides_tools:
+  - codex_submit
+  - codex_status
+  - codex_continue
