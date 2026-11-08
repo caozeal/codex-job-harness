@@ -14,14 +14,20 @@
 - No `shell=True`; build argv lists.
 - The web layer is read-only (`GET`/`HEAD`), binds loopback by default, and renders untrusted job
   text with `textContent` (never `innerHTML`).
-- `socket.bind()` is blocked inside your sandbox, so `tests/test_web.py` fails with
-  `PermissionError` during your run. That is expected — do not try to work around it, and do not
-  delete or skip those tests. The operator re-runs the suite outside the sandbox.
+- `socket.bind()` is blocked by default in the `workspace-write` sandbox, so `tests/test_web.py`
+  fails with `PermissionError` unless network access is enabled. Run the suite with:
+
+      codex exec -s workspace-write -c sandbox_workspace_write.network_access=true \
+        --skip-git-repo-check "<prompt: run the tests and fix failures>"
+
+  With that flag the whole suite passes inside the sandbox (verified: 7/7 web tests green).
+  Do not delete or skip tests to work around a bind failure, and do not reach for
+  `danger-full-access` — the narrow `network_access` switch is enough.
 
 ## Definition of done
 
-Run `python3 -m unittest discover -s tests -v`. All non-web tests must pass; web tests are
-expected to error with `PermissionError` on bind and nothing else. Quote the output verbatim in
+Run `python3 -m unittest discover -s tests -v` with the `network_access=true` flag. **All tests
+must pass** — 16 at the time of writing, including the 7 web tests. Quote the output verbatim in
 your summary. Never claim success without having run it.
 
 ## What the operator verifies afterwards
