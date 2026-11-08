@@ -141,6 +141,75 @@ class HarnessTests(unittest.TestCase):
         thread.join()
         self.assertEqual(errors, [])
 
+    def command(self, *args):
+        return subprocess.run([os.sys.executable, '-m', 'codex_jobs', *args],
+                              capture_output=True, text=True, timeout=10)
+
+    def test_wait_terminal_and_failure(self):
+        job = self.submit()
+        self.wait(job, lambda s: s['status'] == 'succeeded')
+        result = self.command('wait', job)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['final_response'], 'done')
+        self.config('failure')
+        failed = self.submit()
+        self.wait(failed, lambda s: s['status'] == 'failed')
+        result = self.command('wait', job, failed)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(len(result.stdout.splitlines()), 2)
+
+    def test_wait_running_and_timeout(self):
+        self.config('hang', seconds=0.7)
+        job = self.submit()
+        self.wait(job, lambda s: s['status'] == 'running')
+        started = time.monotonic()
+        result = self.command('wait', job, '--timeout', '5')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertGreater(time.monotonic() - started, 0.2)
+        self.config('hang', seconds=30)
+        job = self.submit()
+        self.wait(job, lambda s: s['status'] == 'running')
+        try:
+            result = self.command('wait', job, '--timeout', '1')
+            self.assertEqual(result.returncode, 2)
+            self.assertEqual(json.loads(result.stdout)['status'], 'running')
+        finally:
+            with patch.dict(os.environ, {'CODEX_JOB_TIMEOUT_SEC': '0'}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    watcher.sweep()
+
+    def test_pending_and_independent_notification(self):
+        job = self.submit()
+        self.wait(job, lambda s: s['status'] == 'succeeded')
+        self.config('hang', seconds=30)
+        running = self.submit()
+        self.wait(running, lambda s: s['status'] == 'running')
+        try:
+            path = store.job_path(job) / 'status.json'
+            old = store.read(job)
+            del old['agent_notified']
+            store.write_json(path, old)
+            result = self.command('pending', '--peek', '--json')
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual([item['job_id'] for item in json.loads(result.stdout)], [job])
+            self.assertNotIn('agent_notified', store.read(job))
+            with contextlib.redirect_stdout(io.StringIO()):
+                watcher.sweep()
+            self.assertTrue(store.read(job)['notified'])
+            self.assertFalse(store.read(job).get('agent_notified', False))
+            result = self.command('pending', '--mark')
+            self.assertIn(job, result.stdout)
+            self.assertTrue(store.read(job)['agent_notified'])
+            self.assertTrue(store.read(job)['notified'])
+            self.assertEqual(self.command('pending', '--peek').stdout, '')
+            before = path.read_bytes()
+            self.assertEqual(self.command('pending', '--mark', '--json').stdout, '')
+            self.assertEqual(path.read_bytes(), before)
+        finally:
+            with patch.dict(os.environ, {'CODEX_JOB_TIMEOUT_SEC': '0'}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    watcher.sweep()
+
     def test_plugin_registration(self):
         path = Path(__file__).resolve().parent.parent / 'plugin/codex-worker/__init__.py'
         spec = importlib.util.spec_from_file_location('adapter', path)

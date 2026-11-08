@@ -18,6 +18,14 @@ Run `watch --once` every minute under launchd or cron, or run `watch --loop --in
 
 Repositories must resolve inside the allowed root and contain `.git`. Analyze mode uses read-only sandboxing; edits require explicit opt-in. Resume turns explicitly set the sandbox and disable approval prompts, so they do not implicitly inherit a less restrictive sandbox from Codex configuration. Job directories and files are private to the current user.
 
+## 等待任务
+
+`python3 -m codex_jobs wait JOB_ID [JOB_ID ...] [--timeout 900]` 等待全部任务结束，每个任务输出一行 JSON，最终回复最多 2000 个字符。全部成功退出码为 0，任务失败或超时为 1，等待超时为 2；该命令不修改任务状态。
+
+## 待复核任务
+
+`python3 -m codex_jobs pending [--peek|--mark] [--json]` 列出已结束且尚未被 agent 复核的任务。默认 `--peek` 只查看，`--mark` 列出并标记已复核；`--json` 输出 JSON 数组。没有待复核任务时不输出内容。此标记独立于 watcher 的用户通知标记。
+
 ## 任务可视化
 
 运行 `python3 -m codex_jobs serve [--host 127.0.0.1] [--port 8770] [--open]`，在浏览器查看任务状态、事件和日志。页面每三秒自动刷新，详情打开期间暂停刷新；数据来自 `CODEX_JOB_DIR`，服务只提供只读 GET/HEAD 接口。

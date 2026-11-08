@@ -120,7 +120,7 @@ def submit(task, repo, mode='analyze', thread_id=None):
     created = now()
     request = dict(job_id=job_id, task=task, repo=repo, mode=mode, thread_id=thread_id, created_at=created, attempt=1)
     status = dict(status='queued', pid=None, thread_id=thread_id, final_response=None, error=None,
-                  created_at=created, started_at=None, finished_at=None, attempts=1, usage=None, notified=False)
+                  created_at=created, started_at=None, finished_at=None, attempts=1, usage=None, notified=False, agent_notified=False)
     write_json(path / 'request.json', request)
     write_json(path / 'status.json', status)
     event(job_id, 'submitted')
@@ -155,3 +155,26 @@ def list_jobs(status=None):
         except (OSError, ValueError):
             continue
     return results
+
+
+TERMINAL = frozenset(('succeeded', 'failed', 'timeout'))
+
+
+def pending_jobs():
+    results = []
+    for item in list_jobs():
+        if item['status'] in TERMINAL and not item.get('agent_notified', False):
+            try:
+                request = read_json(job_path(item['job_id']) / 'request.json')
+                results.append(dict(item, repo=request['repo']))
+            except (OSError, ValueError, KeyError):
+                continue
+    return results
+
+
+def mark_agent_notified(job_id):
+    with locked(job_id):
+        status = read(job_id)
+        if status['status'] in TERMINAL and not status.get('agent_notified', False):
+            status['agent_notified'] = True
+            write_json(job_path(job_id) / 'status.json', status)
