@@ -3,6 +3,8 @@ import datetime
 import fcntl
 import json
 import os
+import posixpath
+import math
 from pathlib import Path
 import re
 import subprocess
@@ -14,7 +16,7 @@ from contextlib import contextmanager
 PROJECT = Path(__file__).resolve().parent.parent
 ENV_KEYS = ('PATH HOME CODEX_HOME LANG LC_ALL TMPDIR HTTP_PROXY HTTPS_PROXY NO_PROXY '
             'CODEX_JOB_DIR CODEX_ALLOWED_ROOT CODEX_ALLOW_EDITS CODEX_BIN '
-            'CODEX_MAX_ATTEMPTS CODEX_JOB_TIMEOUT_SEC').split()
+            'CODEX_MAX_ATTEMPTS CODEX_JOB_TIMEOUT_SEC CODEX_HOSTS_FILE').split()
 
 
 def now():
@@ -91,7 +93,56 @@ def spawn(job_id):
     return process
 
 
-def validate(repo, mode, task):
+def host_config(name):
+    if not isinstance(name, str) or not re.fullmatch(r'[A-Za-z0-9_-]+', name):
+        raise ValueError('invalid host name')
+    filename = os.environ.get('CODEX_HOSTS_FILE', str(Path.home() / '.hermes' / 'codex-hosts.json'))
+    try:
+        with open(os.path.expanduser(filename), encoding='utf-8') as f:
+            hosts = json.load(f)
+    except (OSError, ValueError) as exc:
+        raise ValueError('cannot load CODEX_HOSTS_FILE: ' + str(exc)) from exc
+    if not isinstance(hosts, dict):
+        raise ValueError('CODEX_HOSTS_FILE must contain an object')
+    if name not in hosts:
+        raise ValueError('unknown host: ' + name)
+    config = hosts[name]
+    if not isinstance(config, dict):
+        raise ValueError('host configuration must be an object')
+    ssh_host = config.get('ssh_host')
+    if not isinstance(ssh_host, str) or not re.fullmatch(r'[A-Za-z0-9._-]+', ssh_host) or ssh_host.startswith('-'):
+        raise ValueError('invalid ssh_host')
+    for key in ('codex_bin', 'allowed_root'):
+        value = config.get(key)
+        if not isinstance(value, str) or not value.startswith('/') or '\x00' in value:
+            raise ValueError(key + ' must be an absolute POSIX path')
+    timeout = config.get('connect_timeout_sec', 8)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not math.isfinite(timeout) or not 0 < timeout <= 60:
+        raise ValueError('connect_timeout_sec must be positive and at most 60')
+    edits = config.get('allow_edits', False)
+    if not isinstance(edits, bool):
+        raise ValueError('allow_edits must be a boolean')
+    return dict(config, connect_timeout_sec=timeout, allow_edits=edits)
+
+
+def validate(repo, mode, task, host=None):
+    if host is not None:
+        config = host_config(host)
+        if not isinstance(repo, str) or not repo.startswith('/') or '\x00' in repo:
+            raise ValueError('remote repo must be an absolute POSIX path')
+        path = posixpath.normpath(repo)
+        base = posixpath.normpath(config['allowed_root'])
+        if posixpath.commonpath((base, path)) != base:
+            raise ValueError('remote repo is outside allowed_root')
+        if mode not in ('analyze', 'edit'):
+            raise ValueError('mode must be analyze or edit')
+        if mode == 'edit' and os.environ.get('CODEX_ALLOW_EDITS', '').lower() != 'true':
+            raise ValueError('edit mode requires CODEX_ALLOW_EDITS=true')
+        if mode == 'edit' and not config['allow_edits']:
+            raise ValueError('edit mode is disabled for host')
+        if not isinstance(task, str) or not task.strip() or len(task.strip()) > 12000:
+            raise ValueError('task must contain 1 to 12000 characters')
+        return path, task.strip()
     allowed = os.environ.get('CODEX_ALLOWED_ROOT')
     if not allowed:
         raise ValueError('CODEX_ALLOWED_ROOT is required')
@@ -110,16 +161,16 @@ def validate(repo, mode, task):
     return str(path), task.strip()
 
 
-def submit(task, repo, mode='analyze', thread_id=None):
-    repo, task = validate(repo, mode, task)
+def submit(task, repo, mode='analyze', thread_id=None, host=None):
+    repo, task = validate(repo, mode, task, host)
     job_id = uuid.uuid4().hex
     base = root()
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     path = job_path(job_id)
     path.mkdir(mode=0o700)
     created = now()
-    request = dict(job_id=job_id, task=task, repo=repo, mode=mode, thread_id=thread_id, created_at=created, attempt=1)
-    status = dict(status='queued', pid=None, thread_id=thread_id, final_response=None, error=None,
+    request = dict(job_id=job_id, task=task, repo=repo, mode=mode, thread_id=thread_id, created_at=created, attempt=1, host=host)
+    status = dict(status='queued', host=host, pid=None, thread_id=thread_id, final_response=None, error=None,
                   created_at=created, started_at=None, finished_at=None, attempts=1, usage=None, notified=False, agent_notified=False)
     write_json(path / 'request.json', request)
     write_json(path / 'status.json', status)
@@ -138,7 +189,7 @@ def continue_job(job_id, task):
     if status['status'] != 'succeeded' or not status.get('thread_id'):
         raise ValueError('job must have succeeded and have a thread_id')
     request = read_json(job_path(job_id) / 'request.json')
-    return submit(task, request['repo'], request['mode'], status['thread_id'])
+    return submit(task, request['repo'], request['mode'], status['thread_id'], request.get('host'))
 
 
 def list_jobs(status=None):
@@ -166,7 +217,7 @@ def pending_jobs():
         if item['status'] in TERMINAL and not item.get('agent_notified', False):
             try:
                 request = read_json(job_path(item['job_id']) / 'request.json')
-                results.append(dict(item, repo=request['repo']))
+                results.append(dict(item, repo=request['repo'], **({'host': request['host']} if 'host' in request else {})))
             except (OSError, ValueError, KeyError):
                 continue
     return results

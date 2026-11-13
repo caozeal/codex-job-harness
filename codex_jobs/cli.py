@@ -16,6 +16,7 @@ def main(argv=None):
     p.add_argument('--repo', required=True)
     p.add_argument('--task', required=True)
     p.add_argument('--mode', choices=('analyze', 'edit'), default='analyze')
+    p.add_argument('--host')
     p = subs.add_parser('status')
     p.add_argument('job_id')
     p = subs.add_parser('continue')
@@ -44,7 +45,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == 'submit':
-            result = submit(args.task, args.repo, args.mode)
+            result = submit(args.task, args.repo, args.mode, host=args.host)
         elif args.command == 'status':
             result = status(args.job_id)
         elif args.command == 'continue':

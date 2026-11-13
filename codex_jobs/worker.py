@@ -1,6 +1,9 @@
 """Run a single Codex turn."""
 import glob
 import json
+import math
+import posixpath
+import shlex
 import os
 from pathlib import Path
 import shutil
@@ -38,7 +41,9 @@ def main(job_id):
     usage = None
     thread_id = request.get('thread_id')
     try:
-        exe = binary()
+        host = request.get('host')
+        config = store.host_config(host) if host is not None else None
+        exe = config['codex_bin'] if config else binary()
         sandbox = 'read-only' if request['mode'] == 'analyze' else 'workspace-write'
         if thread_id:
             argv = [exe, 'exec', 'resume', thread_id, '--json', '--skip-git-repo-check',
@@ -47,11 +52,27 @@ def main(job_id):
         else:
             argv = [exe, 'exec', '--json', '-C', request['repo'], '-s', sandbox,
                     '--skip-git-repo-check', '-c', 'model_reasoning_effort=low', request['task']]
+        cwd = request['repo']
+        if config:
+            if thread_id:
+                remote_args = [exe, 'exec', 'resume', thread_id, '--json', '--skip-git-repo-check',
+                               '-c', 'sandbox_mode="' + sandbox + '"', '-c', 'approval_policy="never"',
+                               '-c', 'model_reasoning_effort=low', request['task']]
+            else:
+                remote_args = [exe, 'exec', '--json', '-s', sandbox, '--skip-git-repo-check',
+                               '-c', 'approval_policy="never"', '-c', 'model_reasoning_effort=low', request['task']]
+            command = ('export PATH=' + shlex.quote(posixpath.dirname(exe)) + ':$PATH; cd ' +
+                       shlex.quote(request['repo']) + ' && test -d .git && ' +
+                       ' '.join(shlex.quote(arg) for arg in remote_args))
+            argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=' + str(math.ceil(config['connect_timeout_sec'])),
+                    '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', config['ssh_host'], command]
+            cwd = str(store.PROJECT)
         env = os.environ.copy()
-        env['PATH'] = str(Path(exe).parent) + os.pathsep + env.get('PATH', '')
+        if not config:
+            env['PATH'] = str(Path(exe).parent) + os.pathsep + env.get('PATH', '')
         # A repository-local file avoids pipe deadlock when stderr is verbose.
         with tempfile.TemporaryFile(mode='w+', encoding='utf-8', dir=path) as stderr:
-            proc = subprocess.Popen(argv, cwd=request['repo'], env=env, stdin=subprocess.DEVNULL,
+            proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.PIPE, stderr=stderr, text=True, errors='replace')
             for line in proc.stdout:
                 store.append(path / 'worker.log', line)

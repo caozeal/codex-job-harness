@@ -221,6 +221,11 @@ class HarnessTests(unittest.TestCase):
         ctx = Context()
         module.register(ctx)
         self.assertEqual(set(ctx.tools), {'codex_submit', 'codex_status', 'codex_continue'})
+        repo_description = ctx.tools['codex_submit']['schema']['parameters']['properties']['repo']['description']
+        self.assertIn('CODEX_ALLOWED_ROOT', repo_description)
+        self.assertIn("host's allowed_root", repo_description)
+        self.assertIn('host is omitted', repo_description)
+        self.assertIn('host is given', repo_description)
         entry = ctx.tools['codex_status']
         # Hermes dispatches handler(args_dict, **kwargs) positionally.
         self.assertIn('error', json.loads(entry['handler']({'job_id': 'bad'})))

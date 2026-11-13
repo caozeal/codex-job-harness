@@ -60,3 +60,15 @@ with a direct `hermes send` path (`CODEX_NOTIFY_MODE=send`, default) for use out
 MIT — see [LICENSE](LICENSE).
 
 
+
+## Remote hosts
+
+Set `CODEX_HOSTS_FILE` to a JSON file (default `~/.hermes/codex-hosts.json`) containing named, preconfigured SSH hosts:
+
+```json
+{"macbook": {"ssh_host": "macbook", "codex_bin": "/Users/caozeal/.nvm/versions/node/v24.20.0/bin/codex", "allowed_root": "/Users/caozeal/projects", "connect_timeout_sec": 8, "allow_edits": false}}
+```
+
+`connect_timeout_sec` defaults to 8 and must be positive and at most 60; `allow_edits` defaults to false. The SSH host must support noninteractive login. Submit with `python3 -m codex_jobs submit --host macbook --repo /Users/caozeal/projects/repo --task 'Review'`. The repository is an absolute path on the remote host, inside its `allowed_root`; it must contain a `.git` directory. Edit mode requires both the host's `allow_edits` and `CODEX_ALLOW_EDITS=true`. Continuations use the same host and its own Codex session. Remote fresh and resumed turns explicitly set their sandbox, disable approval prompts and set reasoning effort to low.
+
+On timeout the local process group and SSH are killed, but remote Codex may briefly keep running. SSH keepalives reduce this window; check the host after a remote timeout.

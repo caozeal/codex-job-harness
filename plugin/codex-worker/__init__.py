@@ -59,7 +59,8 @@ _DEFINITIONS = [
         "Submit an asynchronous Codex job for a Git repository and return its job_id.",
         {
             "task": {"type": "string", "description": "What Codex should do."},
-            "repo": {"type": "string", "description": "Absolute path to a Git repo inside CODEX_ALLOWED_ROOT."},
+            "repo": {"type": "string", "description": "When host is omitted, an absolute local Git repo path inside CODEX_ALLOWED_ROOT; when host is given, an absolute POSIX path inside that host's allowed_root."},
+            "host": {"type": "string", "description": "Host name from CODEX_HOSTS_FILE; repo is a path on that host."},
             "mode": {"type": "string", "enum": ["analyze", "edit"],
                      "description": "analyze = read-only (default), edit = workspace-write."},
         },
