@@ -40,6 +40,7 @@ def main(job_id):
     response = None
     usage = None
     thread_id = request.get('thread_id')
+    model_args = ['-c', 'model="%s"' % request['model']] if request.get('model') else []
     try:
         host = request.get('host')
         config = store.host_config(host) if host is not None else None
@@ -48,21 +49,21 @@ def main(job_id):
         if thread_id:
             argv = [exe, 'exec', 'resume', thread_id, '--json', '--skip-git-repo-check',
                     '-c', 'sandbox_mode="' + sandbox + '"', '-c', 'approval_policy="never"',
-                    '-c', 'model_reasoning_effort=low', request['task']]
+                    '-c', 'model_reasoning_effort=low', *model_args, request['task']]
         else:
             argv = [exe, 'exec', '--json', '-C', request['repo'], '-s', sandbox,
-                    '--skip-git-repo-check', '-c', 'model_reasoning_effort=low', request['task']]
+                    '--skip-git-repo-check', '-c', 'model_reasoning_effort=low', *model_args, request['task']]
         cwd = request['repo']
         if config:
             if thread_id:
                 remote_args = [exe, 'exec', 'resume', thread_id, '--json', '--skip-git-repo-check',
                                '-c', 'sandbox_mode="' + sandbox + '"', '-c', 'approval_policy="never"',
-                               '-c', 'model_reasoning_effort=low', request['task']]
+                               '-c', 'model_reasoning_effort=low', *model_args, request['task']]
             else:
                 remote_args = [exe, 'exec', '--json', '-s', sandbox, '--skip-git-repo-check',
-                               '-c', 'approval_policy="never"', '-c', 'model_reasoning_effort=low', request['task']]
+                               '-c', 'approval_policy="never"', '-c', 'model_reasoning_effort=low', *model_args, request['task']]
             command = ('export PATH=' + shlex.quote(posixpath.dirname(exe)) + ':$PATH; cd ' +
-                       shlex.quote(request['repo']) + ' && test -d .git && ' +
+                       shlex.quote(request['repo']) + ' && ' +
                        ' '.join(shlex.quote(arg) for arg in remote_args))
             argv = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=' + str(math.ceil(config['connect_timeout_sec'])),
                     '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=2', config['ssh_host'], command]

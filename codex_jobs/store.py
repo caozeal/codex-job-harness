@@ -125,6 +125,18 @@ def host_config(name):
     return dict(config, connect_timeout_sec=timeout, allow_edits=edits)
 
 
+MODEL_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$')
+
+
+def validate_model(model):
+    """模型名白名单：只允许字母数字与 . _ : / -，避免拼出非法 codex 配置值。"""
+    if model is None or model == '':
+        return None
+    if not isinstance(model, str) or not MODEL_RE.match(model):
+        raise ValueError('invalid model name: %r' % (model,))
+    return model
+
+
 def validate(repo, mode, task, host=None):
     if host is not None:
         config = host_config(host)
@@ -161,7 +173,8 @@ def validate(repo, mode, task, host=None):
     return str(path), task.strip()
 
 
-def submit(task, repo, mode='analyze', thread_id=None, host=None):
+def submit(task, repo, mode='analyze', thread_id=None, host=None, model=None):
+    model = validate_model(model)
     repo, task = validate(repo, mode, task, host)
     job_id = uuid.uuid4().hex
     base = root()
@@ -169,7 +182,7 @@ def submit(task, repo, mode='analyze', thread_id=None, host=None):
     path = job_path(job_id)
     path.mkdir(mode=0o700)
     created = now()
-    request = dict(job_id=job_id, task=task, repo=repo, mode=mode, thread_id=thread_id, created_at=created, attempt=1, host=host)
+    request = dict(job_id=job_id, task=task, repo=repo, mode=mode, thread_id=thread_id, created_at=created, attempt=1, host=host, model=model)
     status = dict(status='queued', host=host, pid=None, thread_id=thread_id, final_response=None, error=None,
                   created_at=created, started_at=None, finished_at=None, attempts=1, usage=None, notified=False, agent_notified=False)
     write_json(path / 'request.json', request)
@@ -189,7 +202,8 @@ def continue_job(job_id, task):
     if status['status'] != 'succeeded' or not status.get('thread_id'):
         raise ValueError('job must have succeeded and have a thread_id')
     request = read_json(job_path(job_id) / 'request.json')
-    return submit(task, request['repo'], request['mode'], status['thread_id'], request.get('host'))
+    return submit(task, request['repo'], request['mode'], status['thread_id'],
+                  request.get('host'), model=request.get('model'))
 
 
 def list_jobs(status=None):
